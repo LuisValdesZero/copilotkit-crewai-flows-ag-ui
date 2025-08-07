@@ -6,6 +6,14 @@ import json
 from litellm import completion
 from crewai.flow.flow import Flow, start, router, listen
 from ag_ui_crewai.sdk import copilotkit_stream, CopilotKitState
+from pydantic import BaseModel
+from typing import Literal, List
+
+
+class TaskStep(BaseModel):
+    description: str
+    status: Literal["enabled", "disabled"]
+
 
 class AgentState(CopilotKitState):
     """
@@ -16,7 +24,8 @@ class AgentState(CopilotKitState):
     which will be used to set the language of the agent.
     """
     proverbs: list[str] = []
-    # your_custom_agent_state: str = ""
+    steps: List[TaskStep] = []
+
 
 GET_WEATHER_TOOL = {
     "type": "function",
@@ -36,14 +45,90 @@ GET_WEATHER_TOOL = {
     }
 }
 
+# This tool simulates performing a task on the server.
+# The tool call will be streamed to the frontend as it is being generated.
+DEFINE_TASK_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "generate_task_steps",
+        "description": "Make up 10 steps (only a couple of words per step) that are required for a task. The step should be in imperative form (i.e. Dig hole, Open door, ...)",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {
+                                "type": "string",
+                                "description": "The text of the step in imperative form"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["enabled"],
+                                "description": "The status of the step, always 'enabled'"
+                            }
+                        },
+                        "required": ["description", "status"]
+                    },
+                    "description": "An array of 10 step objects, each containing text and status"
+                }
+            },
+            "required": ["steps"]
+        }
+    }
+}
+
+GENERATE_HAIKU_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "generate_haiku",
+        "description": "Generate a haiku in Japanese and its English translation",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "japanese": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "An array of three lines of the haiku in Japanese"
+                },
+                "english": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "An array of three lines of the haiku in English"
+                },
+                "image_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Names of 3 relevant images from the provided list"
+                }
+            },
+            "required": ["japanese", "english", "image_names"]
+        }
+    }
+}
+
 tools = [
-    GET_WEATHER_TOOL
-    # your_tool_here
+    GET_WEATHER_TOOL,
+    DEFINE_TASK_TOOL,
+    GENERATE_HAIKU_TOOL
 ]
 
+def get_weather(args):
+    """
+    Get the weather for a given location.
+    """
+    return f"The weather for {args['location']} is 70 degrees, clear skies, 45% humidity, 5 mph wind, and feels like 72 degrees."
+
 tool_handlers = {
-    "get_weather": lambda args: f"The weather for {args['location']} is 70 degrees, clear skies, 45% humidity, 5 mph wind, and feels like 72 degrees."
-    # your tool handler here
+    "get_weather": get_weather
 }
 
 class SampleAgentFlow(Flow[AgentState]):
@@ -70,7 +155,19 @@ class SampleAgentFlow(Flow[AgentState]):
         For more about the ReAct design pattern, see: 
         https://www.perplexity.ai/search/react-agents-NcXLQhreS0WDzpVaS4m9Cg
         """
-        system_prompt = f"You are a helpful assistant. The current proverbs are {self.state.proverbs}."
+        system_prompt = f"""
+        You are a helpful assistant. The current proverbs are {self.state.proverbs}.        
+
+        You MUST call the `generate_task_steps` function when the user asks you to perform a task.
+        When the function `generate_task_steps` is called, the user will decide to enable or disable a step.
+        After the user has decided which steps to perform, provide a textual description of how you are performing the task.
+        If the user has disabled a step, you are not allowed to perform that step.
+        However, you should find a creative workaround to perform the task, and if an essential step is disabled, you can even use
+        some humor in the description of how you are performing the task.
+        Don't just repeat a list of steps, come up with a creative but short description (3 sentences max) of how you are performing the task.
+
+        You assist the user in generating a haiku. When generating a haiku using the 'generate_haiku' tool, you MUST also select exactly 3 image filenames from the following list that are most relevant to the haiku's content or theme. Return the filenames in the 'image_names' parameter. Dont provide the relavent image names in your final response to the user. 
+        """
 
         # 1. Run the model and stream the response
         #    Note: In order to stream the response, wrap the completion call in
@@ -91,7 +188,7 @@ class SampleAgentFlow(Flow[AgentState]):
                 # 1.2 Bind the tools to the model
                 tools=[
                     *self.state.copilotkit.actions,
-                    GET_WEATHER_TOOL
+                    *tools
                 ],
 
                 # 1.3 Disable parallel tool calls to avoid race conditions,
