@@ -24,6 +24,11 @@ const VALID_IMAGE_NAMES = [
 
 export default function CopilotKitPage() {
   const [background, setBackground] = useState<string>("#6366f1");
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // 🪁 Frontend Actions: https://docs.copilotkit.ai/guides/frontend-actions
   useCopilotAction({
@@ -52,6 +57,17 @@ export default function CopilotKitPage() {
     ${chatSuggestions.sharedState}
     `,
   });
+
+  // Prevent hydration mismatch by ensuring client-side rendering
+  if (!isMounted) {
+    return (
+      <main style={{ "--copilot-kit-primary-color": background } as CopilotKitCSSProperties}>
+        <div className="h-screen w-screen flex justify-center items-center">
+          <div className="text-white">Loading...</div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main style={{ "--copilot-kit-primary-color": background } as CopilotKitCSSProperties}>
@@ -99,15 +115,29 @@ type AgentState = {
 }
 
 function Proverbs({ background }: { background: string }) {
+  const INITIAL_PROVERBS = [
+    "CopilotKit may be new, but its the best thing since sliced bread.",
+  ];
+
   // 🪁 Shared State: https://docs.copilotkit.ai/coagents/shared-state
   const {state, setState} = useCoAgent<AgentState>({
     name: "starterAgent",
     initialState: {
-      proverbs: [
-        "CopilotKit may be new, but its the best thing since sliced bread.",
-      ],
+      proverbs: INITIAL_PROVERBS,
     },
-  })
+  });
+
+  // Hydration-safe: ensure consistent rendering between server and client
+  const [isClient, setIsClient] = useState(false);
+  
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // Use initial proverbs if agent state is empty, but only after hydration
+  const displayProverbs = isClient 
+    ? (state.proverbs?.length > 0 ? state.proverbs : INITIAL_PROVERBS)
+    : INITIAL_PROVERBS;
 
   // 🪁 Frontend Actions: https://docs.copilotkit.ai/coagents/frontend-actions
   useCopilotAction({
@@ -118,9 +148,10 @@ function Proverbs({ background }: { background: string }) {
       required: true,
     }],
     handler: ({ proverb }) => {
+      const currentProverbs = state.proverbs?.length > 0 ? state.proverbs : INITIAL_PROVERBS;
       setState({
         ...state,
-        proverbs: [...state.proverbs, proverb],
+        proverbs: [...currentProverbs, proverb],
       });
       document.getElementById("proverbs-container")?.scrollIntoView({ behavior: "smooth" });
     },
@@ -174,17 +205,20 @@ function Proverbs({ background }: { background: string }) {
         <p className="text-gray-200 text-center italic mb-6">This is a demonstrative page, but it could be anything you want! 🪁</p>
         <hr className="border-white/20 my-6" />
         <div className="flex flex-col gap-3">
-          {state.proverbs?.map((proverb, index) => (
+          {displayProverbs?.map((proverb, index) => (
             <div 
               key={index} 
               className="bg-white/15 p-4 rounded-xl text-white relative group hover:bg-white/20 transition-all"
             >
               <p className="pr-8">{proverb}</p>
               <button 
-                onClick={() => setState({
-                  ...state,
-                  proverbs: state.proverbs?.filter((_, i) => i !== index),
-                })}
+                onClick={() => {
+                  const currentProverbs = state.proverbs?.length > 0 ? state.proverbs : INITIAL_PROVERBS;
+                  setState({
+                    ...state,
+                    proverbs: currentProverbs?.filter((_, i) => i !== index),
+                  });
+                }}
                 className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition-opacity 
                   bg-red-500 hover:bg-red-600 text-white rounded-full h-6 w-6 flex items-center justify-center"
               >
@@ -193,7 +227,7 @@ function Proverbs({ background }: { background: string }) {
             </div>
           ))}
         </div>
-        {state.proverbs?.length === 0 && <p className="text-center text-white/80 italic my-8">
+        {displayProverbs?.length === 0 && <p className="text-center text-white/80 italic my-8">
           No proverbs yet. Ask the assistant to add some!
         </p>}
       </div>
@@ -569,31 +603,6 @@ const StepsFeedback = ({ args, respond, status }: { args: any, respond: any, sta
   );
 };
 
-function Spinner() {
-  return (
-    <svg
-      className="mr-2 size-3 animate-spin text-slate-500"
-      xmlns="http://www.w3.org/2000/svg"
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      ></circle>
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      ></path>
-    </svg>
-  );
-}
-
 enum SkillLevel {
   BEGINNER = "Beginner",
   INTERMEDIATE = "Intermediate",
@@ -722,6 +731,9 @@ function Recipe() {
 
   useEffect(() => {
     setRecipe(newRecipeState);
+    if(JSON.stringify(newRecipeState) !== JSON.stringify(INITIAL_STATE.recipe)) {
+      document.getElementById("recipe-container")?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [JSON.stringify(newRecipeState)]);
 
   const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
