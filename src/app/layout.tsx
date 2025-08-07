@@ -4,6 +4,7 @@ import { CopilotKit } from "@copilotkit/react-core";
 import "./globals.css";
 import "@copilotkit/react-ui/styles.css";
 import "./style.css";
+import "./style-shared-state.css";
 
 export const metadata: Metadata = {
   title: "Create Next App",
