@@ -35,7 +35,6 @@ export default function CopilotKitPage() {
       },
     ],
     handler: ({ background }) => {
-      console.log("background", background);
       setBackground(background);
     },
   });
@@ -69,7 +68,7 @@ type AgentState = {
 function YourMainContent({ background }: { background: string }) {
   // 🪁 Shared State: https://docs.copilotkit.ai/coagents/shared-state
   const {state, setState} = useCoAgent<AgentState>({
-    name: "sample_agent",
+    name: "starterAgent",
     initialState: {
       proverbs: [
         "CopilotKit may be new, but its the best thing since sliced bread.",
