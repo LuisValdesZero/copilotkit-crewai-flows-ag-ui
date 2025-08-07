@@ -2,7 +2,7 @@
 
 import { useCoAgent, useCopilotAction, useCopilotChat } from "@copilotkit/react-core";
 import { CopilotKitCSSProperties, CopilotSidebar, useCopilotChatSuggestions } from "@copilotkit/react-ui";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 
@@ -495,7 +495,7 @@ function Haiku() {
 const StepsFeedback = ({ args, respond, status }: { 
   args: { steps: { description: string; status: "disabled" | "enabled" | "executing" }[] } | 
         Partial<{ steps: { description: string; status: "disabled" | "enabled" | "executing" }[] }>, 
-  respond: (message: string) => void, 
+  respond?: (message: string) => void, 
   status: string 
 }) => {
   const [localSteps, setLocalSteps] = useState<
@@ -594,7 +594,7 @@ const StepsFeedback = ({ args, respond, status }: {
               const selectedSteps = localSteps
                 .filter((step) => step.status === "enabled")
                 .map((step) => step.description);
-              respond(
+              respond?.(
                 "The user selected the following steps: " +
                 selectedSteps.join(", ")
               );
@@ -703,55 +703,39 @@ function Recipe() {
   const changedKeysRef = useRef<string[]>([]);
   const previousRecipeRef = useRef<Recipe | null>(null);
 
-  // Track changes from agent state only
+  // Sync recipe state from agent
   useEffect(() => {
-    if (!agentState?.recipe) return;
-    
-    const newRecipeFromAgent = { ...recipe };
-    const newChangedKeys = [];
-    let hasChanges = false;
-
-    for (const key in recipe) {
-      const recipeKey = key as keyof Recipe;
-      if (
-        agentState.recipe[recipeKey] !== undefined &&
-        agentState.recipe[recipeKey] !== null
-      ) {
-        let agentValue = agentState.recipe[recipeKey];
-        const recipeValue = recipe[recipeKey];
-
-        // Check if agentValue is a string and replace \n with actual newlines
-        if (typeof agentValue === "string") {
-          agentValue = agentValue.replace(/\\n/g, "\n");
+    // If agent has a recipe, use it directly
+    if (agentState?.recipe) {
+      const agentRecipe = agentState.recipe;
+      
+      // Convert any string values with \n to actual newlines
+      const processedRecipe = { ...agentRecipe };
+      Object.keys(processedRecipe).forEach(key => {
+        const value = (processedRecipe as Record<string, unknown>)[key];
+        if (typeof value === "string") {
+          (processedRecipe as Record<string, unknown>)[key] = value.replace(/\\n/g, "\n");
         }
-
-        if (JSON.stringify(agentValue) !== JSON.stringify(recipeValue)) {
-          (newRecipeFromAgent as Record<string, unknown>)[key] = agentValue;
-          newChangedKeys.push(key);
-          hasChanges = true;
+      });
+      
+      // Check if this is actually different from current recipe
+      const currentRecipeString = JSON.stringify(recipe);
+      const newRecipeString = JSON.stringify(processedRecipe);
+      
+      if (currentRecipeString !== newRecipeString) {
+        
+        // Check if we should scroll (only if this isn't the initial state)
+        const initialStateString = JSON.stringify(INITIAL_STATE.recipe);
+        if (previousRecipeRef.current && newRecipeString !== initialStateString) {
+          document.getElementById("recipe-container")?.scrollIntoView({ behavior: "smooth" });
         }
+        
+        setRecipe(processedRecipe);
+        previousRecipeRef.current = processedRecipe;
       }
     }
-
-    if (hasChanges) {
-      const previousRecipeString = JSON.stringify(previousRecipeRef.current);
-      const newRecipeString = JSON.stringify(newRecipeFromAgent);
-      const initialRecipeString = JSON.stringify(INITIAL_STATE.recipe);
-      
-      // Only update and scroll if this is a meaningful change
-      if (previousRecipeRef.current && 
-          newRecipeString !== previousRecipeString && 
-          newRecipeString !== initialRecipeString) {
-        document.getElementById("recipe-container")?.scrollIntoView({ behavior: "smooth" });
-      }
-      
-      setRecipe(newRecipeFromAgent);
-      previousRecipeRef.current = newRecipeFromAgent;
-      changedKeysRef.current = newChangedKeys;
-    } else if (!isLoading) {
-      changedKeysRef.current = [];
-    }
-  }, [agentState?.recipe, isLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentState?.recipe]); // Only respond to agent state changes, not local recipe changes to avoid infinite loop
 
   const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     updateRecipe({
@@ -768,13 +752,14 @@ function Recipe() {
   };
 
   const handleDietaryChange = (preference: string, checked: boolean) => {
+    const currentPreferences = recipe.dietary_preferences || [];
     if (checked) {
       updateRecipe({
-        dietary_preferences: [...recipe.dietary_preferences, preference],
+        dietary_preferences: [...currentPreferences, preference],
       });
     } else {
       updateRecipe({
-        dietary_preferences: recipe.dietary_preferences.filter(
+        dietary_preferences: currentPreferences.filter(
           (p) => p !== preference
         ),
       });
@@ -792,13 +777,15 @@ function Recipe() {
   
   const addIngredient = () => {
     // Pick a random food emoji from our valid list
+    const currentIngredients = recipe.ingredients || [];
     updateRecipe({
-      ingredients: [...recipe.ingredients, { icon: "🍴", name: "", amount: "" }],
+      ingredients: [...currentIngredients, { icon: "🍴", name: "", amount: "" }],
     });
   };
 
   const updateIngredient = (index: number, field: keyof Ingredient, value: string) => {
-    const updatedIngredients = [...recipe.ingredients];
+    const currentIngredients = recipe.ingredients || [];
+    const updatedIngredients = [...currentIngredients];
     updatedIngredients[index] = {
       ...updatedIngredients[index],
       [field]: value,
@@ -807,15 +794,17 @@ function Recipe() {
   };
 
   const removeIngredient = (index: number) => {
-    const updatedIngredients = [...recipe.ingredients];
+    const currentIngredients = recipe.ingredients || [];
+    const updatedIngredients = [...currentIngredients];
     updatedIngredients.splice(index, 1);
     updateRecipe({ ingredients: updatedIngredients });
   };
 
   const addInstruction = () => {
-    const newIndex = recipe.instructions.length;
+    const currentInstructions = recipe.instructions || [];
+    const newIndex = currentInstructions.length;
     updateRecipe({
-      instructions: [...recipe.instructions, ""],
+      instructions: [...currentInstructions, ""],
     });
     // Set the new instruction as the editing one
     setEditingInstructionIndex(newIndex);
@@ -853,13 +842,26 @@ function Recipe() {
   };
 
 
+  // Safety check - render nothing if recipe is undefined
+  if (!recipe) {
+    return <div>Loading recipe...</div>;
+  }
+
+  // Ensure recipe has proper structure with default arrays
+  const safeRecipe = {
+    ...recipe,
+    ingredients: recipe.ingredients || [],
+    instructions: recipe.instructions || [],
+    dietary_preferences: recipe.dietary_preferences || []
+  };
+
   return (
     <form className="recipe-card">
       {/* Recipe Title */}
       <div className="recipe-header">
         <input
           type="text"
-          value={recipe.title || ''}
+          value={safeRecipe.title || ''}
           onChange={handleTitleChange}
           className="recipe-title-input"
         />
@@ -869,7 +871,7 @@ function Recipe() {
             <span className="meta-icon">🕒</span>
             <select
               className="meta-select"
-              value={cookingTimeValues.find(t => t.label === recipe.cooking_time)?.value || 3}
+              value={cookingTimeValues.find(t => t.label === safeRecipe.cooking_time)?.value || 3}
               onChange={handleCookingTimeChange}
               style={{
                 backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23555\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
@@ -892,7 +894,7 @@ function Recipe() {
             <span className="meta-icon">🏆</span>
             <select
               className="meta-select"
-              value={recipe.skill_level}
+                              value={safeRecipe.skill_level}
               onChange={handleSkillLevelChange}
               style={{
                 backgroundImage: 'url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%23555\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3e%3cpolyline points=\'6 9 12 15 18 9\'%3e%3c/polyline%3e%3c/svg%3e")',
@@ -922,7 +924,7 @@ function Recipe() {
             <label key={option} className="dietary-option">
               <input
                 type="checkbox"
-                checked={recipe.dietary_preferences.includes(option)}
+                checked={safeRecipe.dietary_preferences.includes(option)}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleDietaryChange(option, e.target.checked)}
               />
               <span>{option}</span>
@@ -945,7 +947,7 @@ function Recipe() {
           </button>
         </div>
         <div className="ingredients-container">
-          {recipe.ingredients.map((ingredient, index) => (
+          {safeRecipe.ingredients.map((ingredient, index) => (
             <div key={index} className="ingredient-card">
               <div className="ingredient-icon">{getProperIcon(ingredient.icon)}</div>
               <div className="ingredient-content">
@@ -991,7 +993,7 @@ function Recipe() {
           </button>
         </div>
         <div className="instructions-container">
-          {recipe.instructions.map((instruction, index) => (
+          {safeRecipe.instructions.map((instruction, index) => (
             <div key={index} className="instruction-item">
               {/* Number Circle */}
               <div className="instruction-number">
