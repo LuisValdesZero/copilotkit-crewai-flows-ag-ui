@@ -25,7 +25,22 @@ Agentic generative UI is fully open-ended, and  seamlessly supports in-chat and 
 
 Try to ask it for some recipe, e.g. 'Create a recipe for a spicy pasta dish.', and watch as the state updates. You can then modify the state manually, and chat with the agent to observe it 'sees' your edits.`,
 
-    predictiveStateUpdates : `This agent demonstrates predictive state updates: updates of the agent state prior to execution end. Ask the agent to tell you a short story about pirates - then accept its suggestions. Then ask it to change the pirate's name to George and see what happens.`
+    predictiveStateUpdates : `This agent demonstrates predictive state updates: updates of the agent state prior to execution end. Ask the agent to tell you a short story about pirates - then accept its suggestions. Then ask it to change the pirate's name to George and see what happens.`,
+
+    comprehensive: `This agent showcases multiple CopilotKit capabilities in one integrated experience:
+
+🎨 **Tool-Calling Generative UI**: Create beautiful haiku with real-time visual components
+🍝 **Shared State**: Build recipes that sync between agent and UI  
+🎯 **Frontend Actions**: Change themes and customize the interface
+📋 **Human-in-the-Loop**: Plan complex tasks with interactive checklists
+
+Try these examples to see the agent in action:
+- **"Generate a haiku about AI"** - Watch as the agent creates poetry with matching visuals
+- **"Create a recipe for a spicy pasta dish"** - See real-time state synchronization as the recipe builds
+- **"Set the theme to orange"** - Experience instant UI updates through frontend actions
+- **"Plan a trip to mars"** - Collaborate on complex planning with editable step lists
+
+Each interaction demonstrates how CopilotKit seamlessly blends AI capabilities with rich, interactive user experiences.`
 }
 
 

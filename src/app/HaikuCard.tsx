@@ -29,11 +29,11 @@ export default function HaikuCard({generatedHaiku, setHaikus, haikus} : haikuPro
                         {(() => {
                             const firstLine = generatedHaiku?.japanese?.[0];
                             if (!firstLine) return null;
-                            const haikuIndex = haikus.findIndex((h: any) => h.japanese[0] === firstLine);
+                            const haikuIndex = haikus.findIndex((h: generate_haiku) => h.japanese[0] === firstLine);
                             const haiku = haikus[haikuIndex];
                             if (!haiku?.image_names) return null;
 
-                            return haiku.image_names.map((imageName, imgIndex) => (
+                            return haiku.image_names.map((imageName) => (
                                 <img
                                     key={haikus.length + "_" + imageName}
                                     src={`/images/${imageName}`}

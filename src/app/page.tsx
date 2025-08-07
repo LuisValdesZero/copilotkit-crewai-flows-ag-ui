@@ -2,7 +2,7 @@
 
 import { useCoAgent, useCopilotAction, useCopilotChat } from "@copilotkit/react-core";
 import { CopilotKitCSSProperties, CopilotSidebar, useCopilotChatSuggestions } from "@copilotkit/react-ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Role, TextMessage } from "@copilotkit/runtime-client-gql";
 
@@ -102,7 +102,7 @@ export default function CopilotKitPage() {
         defaultOpen={true}
         labels={{
           title: "Popup Assistant",
-          initial: "👋 Hi, there! You're chatting with an agent. This agent comes with a few tools to get you started.\n\nFor example you can try:\n- **Frontend Tools**: \"Set the theme to orange\"\n- **Shared State**: \"Write a proverb about AI\"\n- **Generative UI**: \"Get the weather in SF\"\n\nAs you interact with the agent, you'll see the UI update in real-time to reflect the agent's **state**, **tool calls**, and **progress**.\n\n" + initialPrompt.toolCallingGenerativeUI
+          initial: "👋 Hi, there! You're chatting with an AI agent powered by CopilotKit!\n\n" + initialPrompt.comprehensive
         }}
       />
     </main>
@@ -421,7 +421,7 @@ function Haiku() {
             ))}
             {haiku.image_names && haiku.image_names.length === 3 && (
               <div className="mt-2 flex gap-2 justify-center">
-                {haiku.image_names.map((imageName, imgIndex) => (
+                {haiku.image_names.map((imageName) => (
                   <img
                     style={{
                       width: '110px',
@@ -469,7 +469,7 @@ function Haiku() {
               ))}
               {haiku.image_names && haiku.image_names.length === 3 && (
                 <div className="mt-6 flex gap-4 justify-center">
-                  {haiku.image_names.map((imageName, imgIndex) => (
+                  {haiku.image_names.map((imageName) => (
                     <img
                       key={imageName}
                       src={`/images/${imageName}`}
@@ -492,7 +492,12 @@ function Haiku() {
   );
 }
 
-const StepsFeedback = ({ args, respond, status }: { args: any, respond: any, status: any }) => {
+const StepsFeedback = ({ args, respond, status }: { 
+  args: { steps: { description: string; status: "disabled" | "enabled" | "executing" }[] } | 
+        Partial<{ steps: { description: string; status: "disabled" | "enabled" | "executing" }[] }>, 
+  respond: (message: string) => void, 
+  status: string 
+}) => {
   const [localSteps, setLocalSteps] = useState<
     {
       description: string;
@@ -502,12 +507,12 @@ const StepsFeedback = ({ args, respond, status }: { args: any, respond: any, sta
   const [newStep, setNewStep] = useState("");
 
   useEffect(() => {
-    if (status === "executing" && localSteps.length === 0) {
+    if (status === "executing" && localSteps.length === 0 && args.steps) {
       setLocalSteps(args.steps);
     }
   }, [status, args.steps, localSteps]);
 
-  if (args.steps === undefined || args.steps.length === 0) {
+  if (!args.steps || args.steps.length === 0) {
     return <></>;
   }
 
@@ -546,7 +551,7 @@ const StepsFeedback = ({ args, respond, status }: { args: any, respond: any, sta
     <div className="flex flex-col gap-4 max-w-[500px] w-full bg-gray-100 rounded-lg p-6 mb-4 mx-auto">
       <div className=" text-black space-y-2">
         <h2 className="text-lg font-bold mb-4">Select Steps</h2>
-        {steps.map((step: any, index: any) => (
+        {steps.map((step: { description: string; status: string }, index: number) => (
           <div key={index} className="text-sm flex items-center">
             <label className="flex items-center cursor-pointer">
               <input
@@ -676,12 +681,10 @@ function Recipe() {
       initialState: INITIAL_STATE,
     });
 
-    console.log("agentState", agentState)
-
   const [recipe, setRecipe] = useState(INITIAL_STATE.recipe);
   const { appendMessage, isLoading } = useCopilotChat();
   const [editingInstructionIndex, setEditingInstructionIndex] = useState<number | null>(null);
-  const newInstructionRef = useRef<HTMLTextAreaElement>(null);
+  // const newInstructionRef = useRef<HTMLTextAreaElement>(null); // Unused for now
 
   const updateRecipe = (partialRecipe: Partial<Recipe>) => {
     setAgentState({
@@ -697,44 +700,58 @@ function Recipe() {
     });
   };
 
-  const newRecipeState = { ...recipe };
-  const newChangedKeys = [];
   const changedKeysRef = useRef<string[]>([]);
+  const previousRecipeRef = useRef<Recipe | null>(null);
 
-  for (const key in recipe) {
-    if (
-      agentState &&
-      agentState.recipe &&
-      (agentState.recipe as any)[key] !== undefined &&
-      (agentState.recipe as any)[key] !== null
-    ) {
-      let agentValue = (agentState.recipe as any)[key];
-      const recipeValue = (recipe as any)[key];
-
-      // Check if agentValue is a string and replace \n with actual newlines
-      if (typeof agentValue === "string") {
-        agentValue = agentValue.replace(/\\n/g, "\n");
-      }
-
-      if (JSON.stringify(agentValue) !== JSON.stringify(recipeValue)) {
-        (newRecipeState as any)[key] = agentValue;
-        newChangedKeys.push(key);
-      }
-    }
-  }
-
-  if (newChangedKeys.length > 0) {
-    changedKeysRef.current = newChangedKeys;
-  } else if (!isLoading) {
-    changedKeysRef.current = [];
-  }
-
+  // Track changes from agent state only
   useEffect(() => {
-    setRecipe(newRecipeState);
-    if(JSON.stringify(newRecipeState) !== JSON.stringify(INITIAL_STATE.recipe)) {
-      document.getElementById("recipe-container")?.scrollIntoView({ behavior: "smooth" });
+    if (!agentState?.recipe) return;
+    
+    const newRecipeFromAgent = { ...recipe };
+    const newChangedKeys = [];
+    let hasChanges = false;
+
+    for (const key in recipe) {
+      const recipeKey = key as keyof Recipe;
+      if (
+        agentState.recipe[recipeKey] !== undefined &&
+        agentState.recipe[recipeKey] !== null
+      ) {
+        let agentValue = agentState.recipe[recipeKey];
+        const recipeValue = recipe[recipeKey];
+
+        // Check if agentValue is a string and replace \n with actual newlines
+        if (typeof agentValue === "string") {
+          agentValue = agentValue.replace(/\\n/g, "\n");
+        }
+
+        if (JSON.stringify(agentValue) !== JSON.stringify(recipeValue)) {
+          (newRecipeFromAgent as Record<string, unknown>)[key] = agentValue;
+          newChangedKeys.push(key);
+          hasChanges = true;
+        }
+      }
     }
-  }, [JSON.stringify(newRecipeState)]);
+
+    if (hasChanges) {
+      const previousRecipeString = JSON.stringify(previousRecipeRef.current);
+      const newRecipeString = JSON.stringify(newRecipeFromAgent);
+      const initialRecipeString = JSON.stringify(INITIAL_STATE.recipe);
+      
+      // Only update and scroll if this is a meaningful change
+      if (previousRecipeRef.current && 
+          newRecipeString !== previousRecipeString && 
+          newRecipeString !== initialRecipeString) {
+        document.getElementById("recipe-container")?.scrollIntoView({ behavior: "smooth" });
+      }
+      
+      setRecipe(newRecipeFromAgent);
+      previousRecipeRef.current = newRecipeFromAgent;
+      changedKeysRef.current = newChangedKeys;
+    } else if (!isLoading) {
+      changedKeysRef.current = [];
+    }
+  }, [agentState?.recipe, isLoading]);
 
   const handleTitleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     updateRecipe({
@@ -1063,3 +1080,4 @@ function Ping() {
     </span>
   );
 }
+
