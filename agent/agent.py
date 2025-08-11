@@ -277,7 +277,7 @@ class SampleAgentFlow(Flow[AgentState]):
 
         You are a helpful assistant for creating recipes. 
         This is the current state of the recipe: {self.state.model_dump_json(indent=2)}
-        You can modify the recipe by calling the generate_recipe tool.
+        You can modify the recipe by calling the 'generate_recipe' tool.
         If you have just created or modified the recipe, just answer in one sentence what you did.
         """
 
